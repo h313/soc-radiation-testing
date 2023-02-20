@@ -16,21 +16,16 @@ uint8_t* memory_space = nullptr;
 std::atomic_bool shutdown(false);
 std::atomic<uint64_t *> data_location;
 
-void sigint_handler(sig_t s) { shutdown = true; }
+void sigint_handler(int s) { shutdown = true; }
 
-inline bool modify_addr(uint64_t *addr) {
+inline bool test_addr(uint64_t *addr) {
   // TODO: exercise ALU/multiply-add pipelines and check against known good values
   return true;
 }
 
-inline bool verify_addr(uint64_t *addr) {
-  // TODO: exercise ALU/multiply-add pipelines and check against known good values
-  return true;
-}
-
-inline uint8_t *get_random_location() {
+inline void get_random_location() {
   // TODO: figure out a good random shuffle method
-  return (memory_space + (memory_size / 2));
+  data_location = (uint64_t *) (memory_space + (memory_size / 2));
 }
 
 void read_and_run_crc() {
@@ -39,18 +34,15 @@ void read_and_run_crc() {
     if (shutdown)
       return;
 
-    data_location = reinterpret_cast<uint64_t *>(get_random_location());
+    get_random_location();
 
     // Load data into cache, but vertically so we fill it up before testing it :)
-    for (int i = 0; i < l1_access_sz; i++) {
-      for (int it = 0; it < L1_DASSOC; it++) {
-        modify_addr(data_location + (it * l1_access_sz) + i);
-      }
-    }
+    for (int i = 0; i < l1_access_sz; i++)
+      for (int it = 0; it < L1_DASSOC; it++)
+        test_addr(data_location + (it * l1_access_sz) + i);
 
-    for (int i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
-      verify_addr(data_location + i);
-    }
+    for (int i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++)
+      test_addr(data_location + i);
   }
 }
 
@@ -71,7 +63,7 @@ int main(int argc, char *argv[]) {
     *curr = 0b10101010;
   }
 
-  signal(SIGINT, reinterpret_cast<void (*)(int)>(sigint_handler));
+  signal(SIGINT, sigint_handler);
 
   read_and_run_crc();
 
