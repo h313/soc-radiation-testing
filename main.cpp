@@ -18,7 +18,12 @@ std::atomic<uint64_t *> data_location;
 
 void sigint_handler(sig_t s) { shutdown = true; }
 
-inline bool calculate_checksum(uint64_t *addr) {
+inline bool modify_addr(uint64_t *addr) {
+  // TODO: exercise ALU/multiply-add pipelines and check against known good values
+  return true;
+}
+
+inline bool verify_addr(uint64_t *addr) {
   // TODO: exercise ALU/multiply-add pipelines and check against known good values
   return true;
 }
@@ -39,8 +44,12 @@ void read_and_run_crc() {
     // Load data into cache, but vertically so we fill it up before testing it :)
     for (int i = 0; i < l1_access_sz; i++) {
       for (int it = 0; it < L1_DASSOC; it++) {
-        calculate_checksum(data_location + (it * l1_access_sz) + i);
+        modify_addr(data_location + (it * l1_access_sz) + i);
       }
+    }
+
+    for (int i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
+      verify_addr(data_location + i);
     }
   }
 }
