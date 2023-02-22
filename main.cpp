@@ -4,6 +4,8 @@
 #include <iostream>
 #include <random>
 
+#include <linux/futex.h>
+
 #define L1_DASSOC 4
 #define L1_SIZE (32 * 1024)
 #define L2_DASSOC 8
@@ -20,7 +22,7 @@ uint8_t* memory_space = nullptr;
 std::atomic_bool shutdown(false);
 std::atomic<uint64_t *> data_location;
 
-std::subtract_with_carry_engine<size_t, 48, 5, 12> *ranlux48_base;
+std::ranlux48_base *ranlux48;
 std::uniform_int_distribution<size_t> *uniform_dist;
 
 void sigint_handler(int s) { shutdown = true; }
@@ -49,7 +51,7 @@ inline bool test_addr(uint64_t *addr) {
 
 inline void get_random_location() {
   // TODO: figure out a good deterministic random shuffle method
-  size_t test_location = (*uniform_dist)(*ranlux48_base);
+  size_t test_location = (*uniform_dist)(*ranlux48);
   data_location = (uint64_t *) (memory_space + test_location);
 }
 
@@ -87,7 +89,7 @@ int main(int argc, char *argv[]) {
   memory_space = (uint8_t*) malloc(memory_size);
 
   // Set up random number generator
-  ranlux48_base = new std::subtract_with_carry_engine<size_t, 48, 5, 12>(RANDOM_SEED);
+  ranlux48 = new std::ranlux48_base(RANDOM_SEED);
   uniform_dist = new std::uniform_int_distribution<size_t>(0, memory_size / sizeof(uint64_t) - l1_access_sz);
 
   std::cout << memory_space << std::endl;
@@ -100,6 +102,9 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, sigint_handler);
 
   read_and_run_crc();
+
+  delete ranlux48;
+  delete uniform_dist;
 
   free(memory_space);
 
