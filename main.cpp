@@ -3,6 +3,9 @@
 #include <cstdlib>
 #include <iostream>
 #include <random>
+#include <thread>
+
+#include <pthread.h>
 
 #define L1_DASSOC 4
 #define L1_SIZE (32 * 1024)
@@ -44,13 +47,13 @@ inline bool test_addr(uint64_t *addr) {
   std::cout << "Read value:" << std::hex << test_val << std::endl;
 
   // Exercise ALU pipeline
-  test_result_1 = (test_val >> 16) + 25;
+  test_result_1 = (test_val + 25) >> 11;
 
   // Check against known good value
   std::cout << "ALU value:" << std::hex << test_result_1 << std::endl;
 
   // Exercise multiply-add pipeline
-  test_result_2 = (test_val * 7) + 25;
+  test_result_2 = (test_val * 13) + 25;
 
   // Check against known good value
   std::cout << "Multiply-Add value:" << std::hex << test_result_2 << std::endl;
@@ -70,52 +73,65 @@ void read_and_run_crc(size_t td) {
   std::atomic_bool *result = td == 0 ? &td0_result : &td1_result;
 
   while (true) {
-    if (shutdown)
+    // Exit when shutdown signal called
+    if (shutdown) {
+      *result = INIT;
       return;
+    }
 
-    if (td == 0)
-      get_random_location();
+    // Thread 0 gets new location
+    if (td == 0) get_random_location();
 
+    // Sync threads before starting data loading
     td_state[td] = READY;
     while (td_state[other_td] != READY) {}
 
     // Load data into cache, but vertically so we fill it up before testing it :)
     for (i = 0; i < l1_access_sz; i++) {
       for (it = 0; it < L1_DASSOC; it++) {
+        // Sync threads before testing data
         td_state[td] = TEST;
         while (td_state[other_td] != TEST) {};
 
         *result = test_addr(data_location + (it * l1_access_sz) + i);
 
+        // Sync threads before comparing
         td_state[td] = COMPARE;
         while (td_state[other_td] != COMPARE) {};
 
         if (td == 0) {
+          // Compare results and check for match
           if (td0_result != td1_result)
             std::cout << "mismatch";
         } else {
+          // Wait for comparison to finish before continuing
           while (td_state[0] == COMPARE) {};
         }
       }
     }
 
+    // Sync up both threads (probably unnecessary but why not)
     td_state[td] = WAITING;
     while (td_state[other_td] != WAITING) {}
 
     // Now that data is in cache, we can go through it linearly
     for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
+      // Sync threads before testing data
       td_state[td] = TEST;
       while (td_state[other_td] != TEST) {};
 
       *result = test_addr(data_location + i);
 
+      // Sync threads before comparing
       td_state[td] = COMPARE;
       while (td_state[other_td] != COMPARE) {};
 
       if (td == 0) {
+        // Compare results and check for match
         if (td0_result != td1_result)
           std::cout << "mismatch";
       } else {
+        // Wait for comparison to finish before continuing
         while (td_state[0] == COMPARE) {};
       }
     }
@@ -131,6 +147,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  // Set threads to ready state
   td_state[0] = INIT;
   td_state[1] = INIT;
 
@@ -142,8 +159,7 @@ int main(int argc, char *argv[]) {
   ranlux48 = new std::ranlux48_base(RANDOM_SEED);
   uniform_dist = new std::uniform_int_distribution<size_t>(0, memory_size / sizeof(uint64_t) - l1_access_sz);
 
-  std::cout << memory_space << std::endl;
-
+  // Write alternating 1s and 0s into memory
   for (i = 0; i < memory_size; i++) {
     curr = memory_space + i;
     *curr = 0b10101010;
