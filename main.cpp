@@ -4,8 +4,6 @@
 #include <iostream>
 #include <random>
 
-#include <linux/futex.h>
-
 #define L1_DASSOC 4
 #define L1_SIZE (32 * 1024)
 #define L2_DASSOC 8
@@ -15,15 +13,25 @@
 
 #define RANDOM_SEED 2020
 
+enum thread_state {
+  INIT,
+  WAITING,
+  READY,
+  TEST,
+  COMPARE,
+  COMPLETE
+};
+
 size_t memory_size = 0;
 size_t l1_access_sz = (L1_SIZE * L1_USAGE / sizeof(uint64_t)) / L1_DASSOC;
 uint8_t* memory_space = nullptr;
 
-std::atomic_bool shutdown(false);
-std::atomic<uint64_t *> data_location;
-
 std::ranlux48_base *ranlux48;
 std::uniform_int_distribution<size_t> *uniform_dist;
+
+std::atomic_bool shutdown(false);
+std::atomic<uint64_t *> data_location;
+std::atomic<thread_state> td_state[2];
 
 void sigint_handler(int s) { shutdown = true; }
 
@@ -55,23 +63,39 @@ inline void get_random_location() {
   data_location = (uint64_t *) (memory_space + test_location);
 }
 
-void read_and_run_crc() {
+void read_and_run_crc(size_t td) {
   int i = 0, it = 0;
 
   while (true) {
     if (shutdown)
       return;
 
-    get_random_location();
+    if (td == 0)
+      get_random_location();
+
+    td_state[td] = READY;
+
+    while (td_state[0] != READY) {}
 
     // Load data into cache, but vertically so we fill it up before testing it :)
-    for (i = 0; i < l1_access_sz; i++)
-      for (it = 0; it < L1_DASSOC; it++)
+    for (i = 0; i < l1_access_sz; i++) {
+      for (it = 0; it < L1_DASSOC; it++) {
+        td_state[td] = TEST;
         test_addr(data_location + (it * l1_access_sz) + i);
+        td_state[td] = COMPARE;
+      }
+    }
+
+    td_state[td] = WAITING;
 
     // Now that data is in cache, we can go through it linearly
-    for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++)
+    for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
+      td_state[td] = TEST;
       test_addr(data_location + i);
+      td_state[td] = COMPARE;
+    }
+
+    td_state[td] = COMPLETE;
   }
 }
 
@@ -84,8 +108,11 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  td_state[0] = INIT;
+  td_state[1] = INIT;
+
   // Allocate memory space
-  memory_size = 1000 * 1000 * 1000 * std::atoll(argv[1]);
+  memory_size = 1000 * 1000 * std::atoll(argv[1]);
   memory_space = (uint8_t*) malloc(memory_size);
 
   // Set up random number generator
@@ -101,7 +128,7 @@ int main(int argc, char *argv[]) {
 
   signal(SIGINT, sigint_handler);
 
-  read_and_run_crc();
+  read_and_run_crc(0);
 
   delete ranlux48;
   delete uniform_dist;

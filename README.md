@@ -20,7 +20,7 @@ make
 ```
 
 ## Design
-The program reserves `memory_size` gigabytes of memory using `malloc` and writes a repeating pattern
+The program reserves `memory_size` megabytes of memory using `malloc` and writes a repeating pattern
 of `0b10101010` to the reserved locations. Two threads are then spawned to test the integrity of the
 memory locations, which allows us to differentiate between faults in the L1 cache and in RAM. As the
 L2 cache has SECDED ECC, we assume that SEEs will not affect data there.
@@ -31,7 +31,12 @@ multiply-add pipelines.
 
 ### Synchronization
 
-TODO
+To minimize kernel interactions, synchronization between threads makes use of `std::atomic` and a
+state machine. Each thread begins in an `INIT` state, which transitions to `READY` on
+initialization. Once thread 0, which sets the location to test, has generated a new address, threads
+transition between the `TEST` and `COMPARE` states for each 64 bits tested. During `TEST`, the
+memory is read and tested on the ALU and multiply-add pipelines, and during `COMPARE` the results
+are checked between the two cores. Finally, threads enter a `COMPLETE` state and the cycle restarts.
 
 ## Possible Errors
 * Memory Mismatch on two cores: potential single-event upset in RAM
