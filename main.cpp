@@ -32,6 +32,7 @@ std::uniform_int_distribution<size_t> *uniform_dist;
 std::atomic_bool shutdown(false);
 std::atomic<uint64_t *> data_location;
 std::atomic<thread_state> td_state[2];
+std::atomic_bool td0_result, td1_result;
 
 void sigint_handler(int s) { shutdown = true; }
 
@@ -65,6 +66,8 @@ inline void get_random_location() {
 
 void read_and_run_crc(size_t td) {
   int i = 0, it = 0;
+  size_t other_td = td == 0 ? 1 : 0;
+  std::atomic_bool *result = td == 0 ? &td0_result : &td1_result;
 
   while (true) {
     if (shutdown)
@@ -74,28 +77,48 @@ void read_and_run_crc(size_t td) {
       get_random_location();
 
     td_state[td] = READY;
-
-    while (td_state[0] != READY) {}
+    while (td_state[other_td] != READY) {}
 
     // Load data into cache, but vertically so we fill it up before testing it :)
     for (i = 0; i < l1_access_sz; i++) {
       for (it = 0; it < L1_DASSOC; it++) {
         td_state[td] = TEST;
-        test_addr(data_location + (it * l1_access_sz) + i);
+        while (td_state[other_td] != TEST) {};
+
+        *result = test_addr(data_location + (it * l1_access_sz) + i);
+
         td_state[td] = COMPARE;
+        while (td_state[other_td] != COMPARE) {};
+
+        if (td == 0) {
+          if (td0_result != td1_result)
+            std::cout << "mismatch";
+        } else {
+          while (td_state[0] == COMPARE) {};
+        }
       }
     }
 
     td_state[td] = WAITING;
+    while (td_state[other_td] != WAITING) {}
 
     // Now that data is in cache, we can go through it linearly
     for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
       td_state[td] = TEST;
-      test_addr(data_location + i);
-      td_state[td] = COMPARE;
-    }
+      while (td_state[other_td] != TEST) {};
 
-    td_state[td] = COMPLETE;
+      *result = test_addr(data_location + i);
+
+      td_state[td] = COMPARE;
+      while (td_state[other_td] != COMPARE) {};
+
+      if (td == 0) {
+        if (td0_result != td1_result)
+          std::cout << "mismatch";
+      } else {
+        while (td_state[0] == COMPARE) {};
+      }
+    }
   }
 }
 

@@ -32,11 +32,12 @@ multiply-add pipelines.
 ### Synchronization
 
 To minimize kernel interactions, synchronization between threads makes use of `std::atomic` and a
-state machine. Each thread begins in an `INIT` state, which transitions to `READY` on
-initialization. Once thread 0, which sets the location to test, has generated a new address, threads
-transition between the `TEST` and `COMPARE` states for each 64 bits tested. During `TEST`, the
-memory is read and tested on the ALU and multiply-add pipelines, and during `COMPARE` the results
-are checked between the two cores. Finally, threads enter a `COMPLETE` state and the cycle restarts.
+state machine. Each thread begins in an `INIT` state, which transitions to `READY` once data
+initialization is complete. Once thread 0, which sets the location to test, has generated a new
+address, threads transition between the `TEST` and `COMPARE` states for each 64 bits tested. During
+`TEST`, the memory is read and tested on the ALU and multiply-add pipelines, and during `COMPARE`
+the results are checked between the two cores. Finally, threads return to the `READY` state and the
+cycle restarts.
 
 ## Possible Errors
 * Memory Mismatch on two cores: potential single-event upset in RAM
