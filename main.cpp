@@ -29,28 +29,6 @@ std::atomic<uint64_t *> data_location;
 
 void sigint_handler(int s) { shutdown = true; }
 
-inline bool test_addr(uint64_t *addr) {
-  // Read data from memory
-  uint64_t test_val = *addr;
-  uint64_t test_result_1, test_result_2;
-
-  //td::cout << "Read value:" << std::hex << test_val << std::endl;
-
-  // Exercise ALU pipeline
-  test_result_1 = (test_val + 25) >> 11;
-
-  // Check against known good value
-  //std::cout << "ALU value:" << std::hex << test_result_1 << std::endl;
-
-  // Exercise multiply-add pipeline
-  test_result_2 = (test_val * 13) + 25;
-
-  // Check against known good value
-  //std::cout << "Multiply-Add value:" << std::hex << test_result_2 << std::endl;
-
-  return true;
-}
-
 inline void get_random_location() {
   // TODO: figure out a good deterministic random shuffle method
   size_t test_location = (*uniform_dist)(*ranlux48);
@@ -59,36 +37,36 @@ inline void get_random_location() {
 
 void read_and_run_crc(size_t td) {
   int i = 0, it = 0;
-  bool result;
+  uint64_t *test_val;
 
   // Load data into cache, but vertically so we fill it up before testing it :)
   for (i = 0; i < l1_access_sz; i++) {
     for (it = 0; it < L1_DASSOC; it++) {
+      test_val = data_location + (it * l1_access_sz) + i;
       // Make sure memory data is correct
-      if (*((data_location + (it * l1_access_sz) + i)) != 0xaaaaaaaaaaaaaaaa)
-        std::cout << "td" << td << ": incorrect data read from memory at" << std::hex
+      if (*test_val != 0xaaaaaaaaaaaaaaaa)
+        std::cout << "td" << td << ": incorrect data read at " << std::hex
                   << ((data_location + (it * l1_access_sz) + i)) << std::endl;
-
-      result = test_addr(data_location + (it * l1_access_sz) + i);
-
-      // Write to log if mismatch
-      if (!result)
-        std::cout << "mismatch";
     }
   }
 
   // Now that data is in cache, we can go through it linearly
   for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
+    test_val = data_location + i;
     // Make sure memory data is correct
-    if (*((data_location + (it * l1_access_sz) + i)) != 0xaaaaaaaaaaaaaaaa)
-      std::cout << "td" << td << ": incorrect data read from memory at" << std::hex
+    if (*test_val != 0xaaaaaaaaaaaaaaaa)
+      std::cout << "td" << td << ": incorrect cache read at " << std::hex
                 << ((data_location + (it * l1_access_sz) + i)) << std::endl;
 
-    result = test_addr(data_location + i);
+    // Exercise ALU pipeline and check against known good value
+    if ((*test_val + 25) >> 11 != 0x15555555555555)
+      std::cout << "td" << td << ": incorrect ALU result at " << std::hex
+                << ((data_location + (it * l1_access_sz) + i)) << std::endl;
 
-    // Write to log if mismatch
-    if (!result)
-      std::cout << "mismatch";
+    // Exercise multiply-add pipeline and check against known good value
+    if ((*test_val * 13) + 25 != 0xaaaaaaaaaaaaaabb)
+      std::cout << "td" << td << ": incorrect multiply-add result at " << std::hex
+                << ((data_location + (it * l1_access_sz) + i)) << std::endl;
   }
 }
 
