@@ -167,7 +167,11 @@ int main(int argc, char *argv[]) {
 
   signal(SIGINT, sigint_handler);
 
-  read_and_run_crc(0);
+  std::thread td_1(read_and_run_crc, 0);
+  std::thread td_2(read_and_run_crc, 0);
+
+  td_1.join();
+  td_2.join();
 
   delete ranlux48;
   delete uniform_dist;
