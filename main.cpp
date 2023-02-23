@@ -19,7 +19,7 @@
 
 size_t memory_size = 0;
 size_t l1_access_sz = (L1_SIZE * L1_USAGE / sizeof(uint64_t)) / L1_DASSOC;
-uint8_t* memory_space = nullptr;
+uint8_t *memory_space = nullptr;
 
 std::ranlux48_base *ranlux48;
 std::uniform_int_distribution<size_t> *uniform_dist;
@@ -32,7 +32,7 @@ void sigint_handler(int s) { shutdown = true; }
 inline void get_random_location() {
   // TODO: figure out a good deterministic random shuffle method
   size_t test_location = (*uniform_dist)(*ranlux48);
-  data_location = (uint64_t *) (memory_space + test_location);
+  data_location = (uint64_t *)(memory_space + test_location);
 }
 
 void read_and_run_crc(size_t td) {
@@ -65,14 +65,16 @@ void read_and_run_crc(size_t td) {
 
     // Exercise multiply-add pipeline and check against known good value
     if ((*test_val * 13) + 25 != 0xaaaaaaaaaaaaaabb)
-      std::cout << "td" << td << ": incorrect multiply-add result at " << std::hex
-                << ((data_location + (it * l1_access_sz) + i)) << std::endl;
+      std::cout << "td" << td << ": incorrect multiply-add result at "
+                << std::hex << ((data_location + (it * l1_access_sz) + i))
+                << std::endl;
   }
 }
 
 int main(int argc, char *argv[]) {
   uint8_t *curr = nullptr;
   size_t i = 0;
+  sched_param sch_params;
 
   if (argc != 2) {
     std::cout << "Usage: " << argv[0] << " memory_size" << std::endl;
@@ -81,11 +83,12 @@ int main(int argc, char *argv[]) {
 
   // Allocate memory space
   memory_size = 1000 * 1000 * std::atoll(argv[1]);
-  memory_space = (uint8_t*) malloc(memory_size);
+  memory_space = (uint8_t *)malloc(memory_size);
 
   // Set up random number generator
   ranlux48 = new std::ranlux48_base(RANDOM_SEED);
-  uniform_dist = new std::uniform_int_distribution<size_t>(0, memory_size / sizeof(uint64_t) - l1_access_sz);
+  uniform_dist = new std::uniform_int_distribution<size_t>(
+      0, memory_size / sizeof(uint64_t) - l1_access_sz);
 
   // Write alternating 1s and 0s into memory
   for (i = 0; i < memory_size; i++) {
@@ -93,16 +96,21 @@ int main(int argc, char *argv[]) {
     *curr = 0b10101010;
   }
 
+  sch_params.sched_priority = 99;
   signal(SIGINT, sigint_handler);
 
   // Loop through and test on random locations
   while (true) {
-    if (shutdown) break;
+    if (shutdown)
+      break;
 
     get_random_location();
 
     std::thread td_1(read_and_run_crc, 0);
     std::thread td_2(read_and_run_crc, 1);
+
+    pthread_setschedparam(td_1.native_handle(), SCHED_FIFO, &sch_params);
+    pthread_setschedparam(td_2.native_handle(), SCHED_FIFO, &sch_params);
 
     td_1.join();
     td_2.join();
