@@ -64,7 +64,7 @@ void read_and_run_crc(size_t td) {
                 << ((data_location + (it * l1_access_sz) + i)) << std::endl;
 
     // Exercise multiply-add pipeline and check against known good value
-    if ((*test_val * 13) + 25 != 0xaaaaaaaaaaaaaabb)
+    if (((*test_val) * (*test_val)) + 25 != 0x38e38e38e38e38fd)
       std::cout << "td" << td << ": incorrect multiply-add result at "
                 << std::hex << ((data_location + (it * l1_access_sz) + i))
                 << std::endl;
