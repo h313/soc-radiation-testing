@@ -30,6 +30,6 @@ thread will run a set of tests on the program twice. These tests will exercise t
 multiply-add pipelines.
 
 ## Possible Errors
-* Memory Mismatch on two cores: potential single-event upset in RAM
-* Memory Mismatch on one core: potential single-event upset in L1 cache
-* Incorrect checksum: potential single-event transient in CPU pipeline
+* Incorrect cache read on two cores: potential single-event upset in RAM
+* Incorrect cache read on one core: potential single-event upset in L1 cache
+* Incorrect ALU/multiply-add result: potential single-event transient in CPU pipeline
