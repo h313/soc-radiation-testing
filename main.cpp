@@ -37,37 +37,43 @@ inline void get_random_location() {
 
 void read_and_run_crc(size_t td) {
   int i = 0, it = 0;
-  uint64_t *test_val;
+  uint64_t *test_val = nullptr;
+  bool err_flag = false;
 
   // Load data into cache, but vertically so we fill it up before testing it :)
   for (i = 0; i < l1_access_sz; i++) {
     for (it = 0; it < L1_DASSOC; it++) {
       test_val = data_location + (it * l1_access_sz) + i;
       // Make sure memory data is correct
-      if (*test_val != 0xaaaaaaaaaaaaaaaa)
+      if (*test_val != 0xaaaaaaaaaaaaaaaa) {
         std::cout << "td" << td << ": incorrect data read at " << std::hex
                   << ((data_location + (it * l1_access_sz) + i)) << std::endl;
+        err_flag = true;
+      }
     }
   }
 
-  // Now that data is in cache, we can go through it linearly
-  for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
-    test_val = data_location + i;
-    // Make sure memory data is correct
-    if (*test_val != 0xaaaaaaaaaaaaaaaa)
-      std::cout << "td" << td << ": incorrect cache read at " << std::hex
-                << ((data_location + (it * l1_access_sz) + i)) << std::endl;
+  if (!err_flag) {
+    // Now that data is in cache, we can go through it linearly
+    for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
+      test_val = data_location + i;
 
-    // Exercise ALU pipeline and check against known good value
-    if ((*test_val + 25) >> 11 != 0x15555555555555)
-      std::cout << "td" << td << ": incorrect ALU result at " << std::hex
-                << ((data_location + (it * l1_access_sz) + i)) << std::endl;
+      // Make sure memory data is correct
+      if (*test_val != 0xaaaaaaaaaaaaaaaa)
+        std::cout << "td" << td << ": incorrect cache read at " << std::hex
+                  << ((data_location + (it * l1_access_sz) + i)) << std::endl;
 
-    // Exercise multiply-add pipeline and check against known good value
-    if (((*test_val) * (*test_val)) + 25 != 0x38e38e38e38e38fd)
-      std::cout << "td" << td << ": incorrect multiply-add result at "
-                << std::hex << ((data_location + (it * l1_access_sz) + i))
-                << std::endl;
+      // Exercise ALU pipeline and check against known good value
+      else if ((*test_val + 25) >> 11 != 0x15555555555555)
+        std::cout << "td" << td << ": incorrect ALU result at " << std::hex
+                  << ((data_location + (it * l1_access_sz) + i)) << std::endl;
+
+      // Exercise multiply-add pipeline and check against known good value
+      else if (((*test_val) * (*test_val)) + 25 != 0x38e38e38e38e38fd)
+        std::cout << "td" << td << ": incorrect multiply-add result at "
+                  << std::hex << ((data_location + (it * l1_access_sz) + i))
+                  << std::endl;
+    }
   }
 }
 
