@@ -27,9 +27,13 @@ L2 cache has SECDED ECC, we assume that SEEs will not affect data there.
 
 After reading a block of memory that takes up a portion of the cache defined by `L1_USAGE`, each
 thread will run a set of tests on the program twice. These tests will exercise the CPU's ALU and
-multiply-add pipelines.
+multiply-add pipelines:
+
+* Data read from memory: done vertically to fill up entire cache
+* Cache read and ALU/multiply-add test: done linearly as the data has already been loaded into the
+cache, skipped for entire block if data read incorrect
 
 ## Possible Errors
-* Incorrect cache read on two cores: potential single-event upset in RAM
-* Incorrect cache read on one core: potential single-event upset in L1 cache
+* Incorrect cache/data read on two cores: potential single-event upset in RAM
+* Incorrect cache/data read on one core: potential single-event upset in L1 cache
 * Incorrect ALU/multiply-add result: potential single-event transient in CPU pipeline
