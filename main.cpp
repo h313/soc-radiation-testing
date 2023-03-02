@@ -1,11 +1,14 @@
 #include <atomic>
+#include <chrono>
 #include <csignal>
+#include <ctime>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <random>
-#include <sys/wait.h>
 #include <thread>
 
+#include <sys/wait.h>
 #include <pthread.h>
 
 #define L1_DASSOC 4
@@ -17,17 +20,15 @@
 
 #define RANDOM_SEED 2020
 
-size_t memory_size = 0;
-size_t l1_access_sz = (L1_SIZE * L1_USAGE / sizeof(uint64_t)) / L1_DASSOC;
+size_t memory_size = 0, l1_access_sz = (L1_SIZE * L1_USAGE / sizeof(uint64_t)) / L1_DASSOC;
 uint8_t *memory_space = nullptr;
+std::atomic<uint64_t *> data_location;
+std::atomic<int> retval[2];
 
 std::ranlux48_base *ranlux48;
 std::uniform_int_distribution<size_t> *uniform_dist;
 
-std::atomic_bool shutdown(false);
-std::atomic<uint64_t *> data_location;
-
-void sigint_handler(int s) { shutdown = true; }
+sched_param sch_params;
 
 inline void get_random_location() {
   // TODO: figure out a good deterministic random shuffle method
@@ -38,7 +39,10 @@ inline void get_random_location() {
 void read_and_run_crc(size_t td) {
   int i = 0, it = 0;
   uint64_t *test_val = nullptr;
-  bool err_flag = false;
+
+  pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch_params);
+
+  retval[td] = 0;
 
   // Load data into cache, but vertically so we fill it up before testing it :)
   for (i = 0; i < l1_access_sz; i++) {
@@ -48,44 +52,47 @@ void read_and_run_crc(size_t td) {
       if (*test_val != 0xaaaaaaaaaaaaaaaa) {
         std::cout << "td" << td << ": incorrect data read at " << std::hex
                   << ((data_location + (it * l1_access_sz) + i)) << std::endl;
-        err_flag = true;
+        retval[td] = 1;
       }
     }
   }
 
-  if (!err_flag) {
+  if (retval[td] == 0) {
     // Now that data is in cache, we can go through it linearly
     for (i = 0; i < L1_SIZE * L1_USAGE / sizeof(uint64_t); i++) {
       test_val = data_location + i;
 
       // Make sure memory data is correct
       if (*test_val != 0xaaaaaaaaaaaaaaaa)
-        std::cout << "td" << td << ": incorrect cache read at " << std::hex
-                  << ((data_location + (it * l1_access_sz) + i)) << std::endl;
+        retval[td] = 2;
 
       // Exercise ALU pipeline and check against known good value
       else if ((*test_val + 25) >> 11 != 0x15555555555555)
-        std::cout << "td" << td << ": incorrect ALU result at " << std::hex
-                  << ((data_location + (it * l1_access_sz) + i)) << std::endl;
+        retval[td] = 3;
 
       // Exercise multiply-add pipeline and check against known good value
       else if (((*test_val) * (*test_val)) + 25 != 0x38e38e38e38e38fd)
-        std::cout << "td" << td << ": incorrect multiply-add result at "
-                  << std::hex << ((data_location + (it * l1_access_sz) + i))
-                  << std::endl;
+        retval[td] = 4;
     }
   }
 }
 
 int main(int argc, char *argv[]) {
   uint8_t *curr = nullptr;
+  int timeout;
   size_t i = 0;
-  sched_param sch_params;
+  std::ofstream out_file;
 
-  if (argc != 2) {
-    std::cout << "Usage: " << argv[0] << " memory_size" << std::endl;
+  std::thread td_1, td_2;
+
+  if (argc != 4) {
+    std::cout << "Usage: " << argv[0] << " memory_size timeout out_file" << std::endl;
     return 1;
   }
+
+  sch_params.sched_priority = 99;
+  timeout = std::atoi(argv[2]);
+  out_file = std::ofstream(argv[3]);
 
   // Allocate memory space
   memory_size = 1000 * 1000 * std::atoll(argv[1]);
@@ -102,29 +109,29 @@ int main(int argc, char *argv[]) {
     *curr = 0b10101010;
   }
 
-  sch_params.sched_priority = 99;
-  signal(SIGINT, sigint_handler);
+  std::time_t start_time = std::time(0);
 
   // Loop through and test on random locations
   while (true) {
-    if (shutdown)
-      break;
-
     get_random_location();
 
-    std::thread td_1(read_and_run_crc, 0);
-    std::thread td_2(read_and_run_crc, 1);
-
-    pthread_setschedparam(td_1.native_handle(), SCHED_FIFO, &sch_params);
-    pthread_setschedparam(td_2.native_handle(), SCHED_FIFO, &sch_params);
+    td_1 = std::thread(read_and_run_crc, 0);
+    td_2 = std::thread(read_and_run_crc, 1);
 
     td_1.join();
     td_2.join();
+
+    if (retval[0] != 0 && retval[1] != 0)
+      out_file << std::time(0) << " " << retval[0] << retval[1] << std::endl;
+
+    if (std::time(0) - start_time >= timeout)
+      break;
   }
 
   delete ranlux48;
   delete uniform_dist;
 
+  out_file.close();
   free(memory_space);
 
   return 0;
