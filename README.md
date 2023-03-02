@@ -5,7 +5,7 @@ can be easily adapted to support other chips.
 
 ## Usage
 ```bash
-radiation_test memory_size
+radiation_test memory_size_in_mb timeout_seconds output_file
 ```
 
 ## Requirements

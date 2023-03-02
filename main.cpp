@@ -81,7 +81,6 @@ int main(int argc, char *argv[]) {
   uint8_t *curr = nullptr;
   int timeout;
   size_t i = 0;
-  std::ofstream out_file;
 
   std::thread td_1, td_2;
 
@@ -92,7 +91,7 @@ int main(int argc, char *argv[]) {
 
   sch_params.sched_priority = 99;
   timeout = std::atoi(argv[2]);
-  out_file = std::ofstream(argv[3]);
+  std::ofstream out_file(argv[3]);
 
   // Allocate memory space
   memory_size = 1000 * 1000 * std::atoll(argv[1]);
