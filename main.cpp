@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <thread>
 
@@ -25,8 +26,8 @@ uint8_t *memory_space = nullptr;
 std::atomic<uint64_t *> data_location;
 std::atomic<int> retval[2];
 
-std::ranlux48_base *ranlux48;
-std::uniform_int_distribution<size_t> *uniform_dist;
+std::unique_ptr<std::ranlux48_base> ranlux48;
+std::unique_ptr<std::uniform_int_distribution<size_t>> uniform_dist;
 
 sched_param sch_params;
 
@@ -98,8 +99,8 @@ int main(int argc, char *argv[]) {
   memory_space = (uint8_t *)malloc(memory_size);
 
   // Set up random number generator
-  ranlux48 = new std::ranlux48_base(RANDOM_SEED);
-  uniform_dist = new std::uniform_int_distribution<size_t>(
+  ranlux48 = std::make_unique<std::ranlux48_base>(RANDOM_SEED);
+  uniform_dist = std::make_unique<std::uniform_int_distribution<size_t>>(
       0, memory_size / sizeof(uint64_t) - l1_access_sz);
 
   // Write alternating 1s and 0s into memory
@@ -109,6 +110,7 @@ int main(int argc, char *argv[]) {
   }
 
   std::time_t start_time = std::time(0);
+  out_file << start_time << " err_log" << std::endl;
 
   // Loop through and test on random locations
   while (true) {
@@ -126,9 +128,6 @@ int main(int argc, char *argv[]) {
     if (std::time(0) - start_time >= timeout)
       break;
   }
-
-  delete ranlux48;
-  delete uniform_dist;
 
   out_file.close();
   free(memory_space);
